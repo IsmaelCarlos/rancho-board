@@ -1,6 +1,8 @@
 #include <SPI.h>
 #include <MFRC522.h>
 #include <LiquidCrystal.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 
 void mensageminicial();
 void mensagem_inicial_cartao();
@@ -23,19 +25,34 @@ MFRC522::MIFARE_Key key;
  
 void setup()
 {
+	Serial.begin(115200);	 //Inicia a serial
+	Serial.println("Configurando....");
 	pinMode(pino_botao_le, INPUT);
 	pinMode(pino_botao_gr, INPUT);
-	Serial.begin(115200);	 //Inicia a serial
+	
 	SPI.begin();			//Inicia	SPI bus
 	mfrc522.PCD_Init();	 //Inicia MFRC522
  
 	//Inicializa o LCD 16x2
 	lcd.begin(16, 2);
-	mensageminicial();
  
 	//Prepara chave - padrao de fabrica = FFFFFFFFFFFFh
 	for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
-	
+
+	const char* ssid = "WIFI-ACCG";
+	const char* password = "Npf@2023ipE!#";
+
+	// Conectar-se à rede Wi-Fi
+	WiFi.begin(ssid, password);
+	while (WiFi.status() != WL_CONNECTED) {
+		delay(1000);
+		Serial.println("Conectando ao WiFi...");
+	}
+	Serial.println("Conectado à rede Wi-Fi");
+
+	Serial.println("Configuração concluida");
+
+	mensageminicial();
 }
  
 void loop()
