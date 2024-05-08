@@ -25,7 +25,7 @@ void setup()
 {
 	pinMode(pino_botao_le, INPUT);
 	pinMode(pino_botao_gr, INPUT);
-	Serial.begin(9600);	 //Inicia a serial
+	Serial.begin(115200);	 //Inicia a serial
 	SPI.begin();			//Inicia	SPI bus
 	mfrc522.PCD_Init();	 //Inicia MFRC522
  
@@ -35,6 +35,7 @@ void setup()
  
 	//Prepara chave - padrao de fabrica = FFFFFFFFFFFFh
 	for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
+	
 }
  
 void loop()
