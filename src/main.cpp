@@ -3,11 +3,14 @@
 #include <LiquidCrystal.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <string.h>
+#include <stdio.h>
 
 void mensageminicial();
 void mensagem_inicial_cartao();
 void modo_leitura();
 void modo_gravacao();
+char* getUid(MFRC522 &rf);
  
 //Pinos Reset e SS módulo MFRC522
 #define SS_PIN 21
@@ -39,8 +42,8 @@ void setup()
 	//Prepara chave - padrao de fabrica = FFFFFFFFFFFFh
 	for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
 
-	const char* ssid = "WIFI-ACCG";
-	const char* password = "Npf@2023ipE!#";
+	const char* ssid = "ismael";
+	const char* password = "leamsi123";
 
 	// Conectar-se à rede Wi-Fi
 	WiFi.begin(ssid, password);
@@ -85,6 +88,33 @@ void loop()
 		delay(3000);
 		modo_gravacao();
 	}
+}
+
+void requisicao_post(String url, String params){
+	Serial.println("Executando requisição....");
+	// Configurar a solicitação POST
+	HTTPClient http;
+	http.begin(url);
+
+	// Configurar os dados a serem enviados
+	http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+	// Enviar a solicitação POST
+	int httpResponseCode = http.POST(params);
+
+	// Verificar a resposta do servidor
+	if (httpResponseCode > 0) {
+		Serial.print("Resposta do servidor: ");
+		Serial.println(http.getString());
+	} else {
+		Serial.print("Erro na solicitação HTTP: ");
+		Serial.println(httpResponseCode);
+	}
+
+	Serial.println("Finalizando...");
+	// Libere os recursos
+	http.end();
+	Serial.println("Finalizado.");
 }
 
 void mensageminicial()
@@ -269,10 +299,23 @@ void modo_gravacao()
 		Serial.println(mfrc522.GetStatusCodeName((MFRC522::StatusCode)status));
 		return;
 	}
+
+	char *str = new char[100];
+	for(int i = 0; i < 100; i++) str[i] = '\0';
+	strncpy(str, (char *)buffer, len);
+
+	Serial.println(len);
+	Serial.print("Exatamente o que foi digitado: ");
+	Serial.println(str);
+	Serial.print("UID do brinco: ");
+	Serial.println(getUid(mfrc522));
+	const char *teste = "chave1=valor1&chave2=valor2";
+	requisicao_post("http://192.168.1.5:6754/teste", teste);
  
 	
 	{
 		Serial.println(F("Dados gravados com sucesso!"));
+		Serial.println((const char *)buffer);
 		lcd.clear();
 		lcd.print("Gravacao OK!");
 	}
@@ -281,4 +324,27 @@ void modo_gravacao()
 	mfrc522.PCD_StopCrypto1();	// Stop encryption on PCD
 	delay(5000);
 	mensageminicial();
+}
+
+char* getUid(MFRC522 &rf){
+	char *uidString = new char[rf.uid.size + 1]; // +1 para o caractere nulo de terminação
+
+	// Limpar a string para garantir que ela esteja vazia antes de preenchê-la
+	memset(uidString, 0, sizeof(uidString));
+
+	// Converter cada byte do UID para sua representação hexadecimal e armazená-lo na string
+	int index = 0;
+	for (byte i = 0; i < rf.uid.size; i++) {
+		// Converter o byte para sua representação hexadecimal
+		char hex[3]; // 2 caracteres para o hexadecimal + 1 caractere nulo de terminação
+		sprintf(hex, "%02X", rf.uid.uidByte[i]);
+		
+		// Concatenar o valor hexadecimal à string de UID
+		strcat(uidString, hex);
+		
+		// Incrementar o índice pelo tamanho do valor hexadecimal (dois caracteres)
+		index += 2;
+	}
+
+	return uidString;
 }

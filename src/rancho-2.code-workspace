@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "D:/M.Rancho/rancho-2"
+		},
+		{
+			"name": "TCC_Brincos",
+			"path": ".."
+		},
+		{
+			"path": "D:/M.Rancho/rancho-backend"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"new": "cpp"
+		}
+	}
+}
