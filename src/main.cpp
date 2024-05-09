@@ -301,12 +301,17 @@ void modo_gravacao()
 		return;
 	}
 
-	Serial.print("Exatamente o que foi digitado: ");
-	Serial.println(getBufferStr(buffer, len));
-	Serial.print("UID do brinco: ");
-	Serial.println(getUid(mfrc522));
-	const char *teste = "chave1=valor1&chave2=valor2";
-	requisicao_post("http://192.168.1.5:6754/teste", teste);
+	
+	// char *params = "chave1=valor1&chave2=valor2";
+	char *params = new char[180];
+	for(int i = 0; i < 180; i++) params[i] = '\0';
+	sprintf(
+		params,
+		"uid_brinco=%s&display_brinco=%s",
+		getUid(mfrc522),
+		getBufferStr(buffer, len)
+	);
+	requisicao_post("http://192.168.1.5:6754/teste", params);
  
 	
 	{
