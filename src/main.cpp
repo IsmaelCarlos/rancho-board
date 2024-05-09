@@ -10,7 +10,8 @@ void mensageminicial();
 void mensagem_inicial_cartao();
 void modo_leitura();
 void modo_gravacao();
-char* getUid(MFRC522 &rf);
+char* getUid(MFRC522&);
+char* getBufferStr(byte*, int);
  
 //Pinos Reset e SS módulo MFRC522
 #define SS_PIN 21
@@ -119,7 +120,7 @@ void requisicao_post(String url, String params){
 
 void mensageminicial()
 {
-	Serial.println("nSelecione o modo leitura ou gravacao...");
+	Serial.println("Selecione o modo leitura ou gravacao...");
 	Serial.println();
 	lcd.clear();
 	lcd.print("Selecione o modo");
@@ -300,13 +301,8 @@ void modo_gravacao()
 		return;
 	}
 
-	char *str = new char[100];
-	for(int i = 0; i < 100; i++) str[i] = '\0';
-	strncpy(str, (char *)buffer, len);
-
-	Serial.println(len);
 	Serial.print("Exatamente o que foi digitado: ");
-	Serial.println(str);
+	Serial.println(getBufferStr(buffer, len));
 	Serial.print("UID do brinco: ");
 	Serial.println(getUid(mfrc522));
 	const char *teste = "chave1=valor1&chave2=valor2";
@@ -347,4 +343,11 @@ char* getUid(MFRC522 &rf){
 	}
 
 	return uidString;
+}
+
+char* getBufferStr(byte* buffer, int len){
+	char *str = new char[100];
+	for(int i = 0; i < 100; i++) str[i] = '\0';
+	strncpy(str, (char *)buffer, len);
+	return str;
 }
