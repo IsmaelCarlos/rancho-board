@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <string.h>
 #include <stdio.h>
+#include <functional>
 
 void mensageminicial();
 void mensagem_inicial_cartao();
@@ -91,8 +92,12 @@ void loop()
 	}
 }
 
-void requisicao_post(String url, String params){
-	Serial.println("Executando requisição....");
+void requisicao_post(
+	String url,
+	String params,
+	std::function<void(HTTPClient&,int)> sucess = std::function<void(HTTPClient&,int)>(),
+	std::function<void(HTTPClient&,int)> error = std::function<void(HTTPClient&,int)>()
+){
 	// Configurar a solicitação POST
 	HTTPClient http;
 	http.begin(url);
@@ -104,18 +109,14 @@ void requisicao_post(String url, String params){
 	int httpResponseCode = http.POST(params);
 
 	// Verificar a resposta do servidor
-	if (httpResponseCode > 0) {
-		Serial.print("Resposta do servidor: ");
-		Serial.println(http.getString());
+	if (httpResponseCode >= 200 && httpResponseCode < 400) {
+		sucess(http, httpResponseCode);
 	} else {
-		Serial.print("Erro na solicitação HTTP: ");
-		Serial.println(httpResponseCode);
+		error(http, httpResponseCode);
 	}
 
-	Serial.println("Finalizando...");
 	// Libere os recursos
 	http.end();
-	Serial.println("Finalizado.");
 }
 
 void mensageminicial()
@@ -311,8 +312,44 @@ void modo_gravacao()
 		getUid(mfrc522),
 		getBufferStr(buffer, len)
 	);
-	requisicao_post("http://192.168.1.5:6754/teste", params);
+
+	bool request_sucess = false;
+	requisicao_post(
+		"http://192.168.110.46:6754/teste",
+		params,
+		[&](HTTPClient &http, int statusCode) {
+			Serial.print("Sucesso na requisicao: ");
+			Serial.print(http.getString());
+			Serial.println("");
+			Serial.print("Status code: ");
+			Serial.println(statusCode);
+			request_sucess = true;
+		},
+		[](HTTPClient &http, int statusCode) {
+			char * mss = new char[512];
+			memset(mss, '\0', sizeof(mss));
+			sprintf(
+				mss,
+				"-----------------------------\n\
+				\rErro na requisicao: %s\n\
+				\rStatus code: %i\n\n\
+				\rRefaca a gravacao\n\
+				\r-----------------------------\n\n",
+				http.getString().c_str(),
+				statusCode
+			);
+			Serial.print(mss);
+			free(mss);
+		}	
+	);
  
+	if(!request_sucess){
+		mfrc522.PICC_HaltA(); // Halt PICC
+		mfrc522.PCD_StopCrypto1();	// Stop encryption on PCD
+		delay(5000);
+		mensageminicial();
+		return;
+	}
 	
 	{
 		Serial.println(F("Dados gravados com sucesso!"));
