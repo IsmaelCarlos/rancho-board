@@ -25,6 +25,8 @@ LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 #//define LED_BUILTIN 2
 #define pino_botao_le 36
 #define pino_botao_gr 39
+
+
  
 MFRC522::MIFARE_Key key;
  
@@ -52,11 +54,21 @@ void setup()
 	while (WiFi.status() != WL_CONNECTED) {
 		delay(1000);
 		Serial.println("Conectando ao WiFi...");
+		lcd.clear();
+		lcd.print("Conectando");
+		lcd.setCursor(0, 1);
+		lcd.print("WiFi...");
 	}
 	Serial.println("Conectado à rede Wi-Fi");
-
+	Serial.println("WiFi conectado");
+	lcd.setCursor(2, 0);
+	delay(3000);
+	lcd.clear();
 	Serial.println("Configuração concluida");
-
+	lcd.print("Configuracao");
+	lcd.setCursor(0, 1);
+	lcd.print("concluida...");	
+	delay(3000);
 	mensageminicial();
 }
  
