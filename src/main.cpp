@@ -93,6 +93,15 @@ void setup()
 		}
 	});
 
+	server.on("/reset", HTTP_GET, [](AsyncWebServerRequest *request) {
+		AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", "OK");
+		response->addHeader("Access-Control-Allow-Origin", "*");
+		response->addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+		response->addHeader("Access-Control-Allow-Headers", "Content-Type");
+		request->send(response);
+		esp_restart();
+	});
+
 
 	server.begin();
 
