@@ -26,6 +26,7 @@ AsyncWebServer server(80);
 
 MFRC522::MIFARE_Key key;
 
+bool RESTART_SIGNAL = false;
 bool __created_task = false;
 bool __read = false;
 char* read_buffer;
@@ -85,21 +86,33 @@ void setup()
 			esp_restart();
 		}
 		else{
-			AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", "WAIT");
+			AsyncWebServerResponse *response = request->beginResponse(
+				200,
+				"text/plain",
+				RESTART_SIGNAL
+					? "ERROR"
+					: "WAIT"
+			);
 			response->addHeader("Access-Control-Allow-Origin", "*");
 			response->addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
 			response->addHeader("Access-Control-Allow-Headers", "Content-Type");
+			if(RESTART_SIGNAL) response->setCode(500);
 			request->send(response);
+
+			if(RESTART_SIGNAL){
+				esp_restart();
+			}
 		}
 	});
 
 	server.on("/reset", HTTP_GET, [](AsyncWebServerRequest *request) {
+		RESTART_SIGNAL = true;
 		AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", "OK");
 		response->addHeader("Access-Control-Allow-Origin", "*");
 		response->addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
 		response->addHeader("Access-Control-Allow-Headers", "Content-Type");
 		request->send(response);
-		esp_restart();
+		// esp_restart();
 	});
 
 
