@@ -6,13 +6,13 @@
 #include <string.h>
 #include <stdio.h>
 #include <functional>
+#include <ESPAsyncWebServer.h>
+#include <esp_task_wdt.h>
 
 void mensageminicial();
 void mensagem_inicial_cartao();
-void modo_leitura();
-void modo_gravacao();
+void ler(void *params);
 char* getUid(MFRC522&);
-char* getBufferStr(byte*, int);
  
 //Pinos Reset e SS módulo MFRC522
 #define SS_PIN 21
@@ -20,24 +20,27 @@ char* getBufferStr(byte*, int);
 MFRC522 mfrc522(SS_PIN, RST_PIN);
  
 const int rs = 13, en = 12, d4 = 2, d5 = 4, d6 = 16, d7 = 17;
-LiquidCrystal lcd(rs, en, d4, d5, d6, d7); 
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
-#//define LED_BUILTIN 2
-#define pino_botao_le 36
-#define pino_botao_gr 39
+AsyncWebServer server(80);
 
-
- 
 MFRC522::MIFARE_Key key;
+
+bool __created_task = false;
+bool __read = false;
+char* read_buffer;
+
+TaskHandle_t longTaskHandle = NULL;
  
 void setup()
 {
 	Serial.begin(115200);	 //Inicia a serial
 	Serial.println("Configurando....");
-	pinMode(pino_botao_le, INPUT);
-	pinMode(pino_botao_gr, INPUT);
+
+	read_buffer = new char[512];
+	for(int i = 0; i < 512; i++) read_buffer[i] = 0;
 	
-	SPI.begin();			//Inicia	SPI bus
+	SPI.begin(); //Inicia SPI bus
 	mfrc522.PCD_Init();	 //Inicia MFRC522
  
 	//Inicializa o LCD 16x2
@@ -46,8 +49,8 @@ void setup()
 	//Prepara chave - padrao de fabrica = FFFFFFFFFFFFh
 	for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
 
-	const char* ssid = "ismael";
-	const char* password = "leamsi123";
+	const char* ssid = "HFAS_2G";
+	const char* password = "x-box 360";
 
 	// Conectar-se à rede Wi-Fi
 	WiFi.begin(ssid, password);
@@ -55,90 +58,68 @@ void setup()
 		delay(1000);
 		Serial.println("Conectando ao WiFi...");
 		lcd.clear();
-		lcd.print("Conectando");
-		lcd.setCursor(0, 1);
-		lcd.print("WiFi...");
+		lcd.print("Aguarde...");
 	}
-	Serial.println("Conectado à rede Wi-Fi");
+
+
+	server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
+		if(!__created_task){
+			__created_task = true;
+			xTaskCreate(
+				ler,
+				"leitura",
+				2048,
+				NULL,
+				1,
+				&longTaskHandle
+			);
+		}
+
+		if(__read){
+			AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", read_buffer);
+			response->addHeader("Access-Control-Allow-Origin", "*");
+			response->addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+			response->addHeader("Access-Control-Allow-Headers", "Content-Type");
+			request->send(response);
+
+			esp_restart();
+		}
+		else{
+			AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", "WAIT");
+			response->addHeader("Access-Control-Allow-Origin", "*");
+			response->addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+			response->addHeader("Access-Control-Allow-Headers", "Content-Type");
+			request->send(response);
+		}
+	});
+
+
+	server.begin();
+
+
+	Serial.println("Conectado a rede Wi-Fi");
 	Serial.println("WiFi conectado");
 	lcd.setCursor(2, 0);
 	delay(3000);
 	lcd.clear();
-	Serial.println("Configuração concluida");
+	Serial.println("Configuracao concluida");
 	lcd.print("Configuracao");
 	lcd.setCursor(0, 1);
-	lcd.print("concluida...");	
+	lcd.print("concluida...");
 	delay(3000);
 	mensageminicial();
 }
  
 void loop()
 {
-	//Verifica se o botao modo leitura foi pressionado
-	int modo_le = digitalRead(pino_botao_le);
-	if (modo_le != 0)
-	{
-		lcd.clear();
-		Serial.println("Modo leitura selecionado");
-		lcd.setCursor(2, 0);
-		lcd.print("Modo leitura");
-		lcd.setCursor(3, 1);
-		lcd.print("selecionado");
-		while (digitalRead(pino_botao_le) == 1) {}
-		delay(3000);
-		modo_leitura();
-	}
-	//Verifica se o botao modo gravacao foi pressionado
-	int modo_gr = digitalRead(pino_botao_gr);
-	if (modo_gr != 0)
-	{
-		lcd.clear();
-		Serial.println("Modo gravacao selecionado");
-		lcd.setCursor(2, 0);
-		lcd.print("Modo gravacao");
-		lcd.setCursor(3, 1);
-		lcd.print("selecionado");
-		while (digitalRead(pino_botao_gr) == 1) {}
-		delay(3000);
-		modo_gravacao();
-	}
-}
-
-void requisicao_post(
-	String url,
-	String params,
-	std::function<void(HTTPClient&,int)> sucess = std::function<void(HTTPClient&,int)>(),
-	std::function<void(HTTPClient&,int)> error = std::function<void(HTTPClient&,int)>()
-){
-	// Configurar a solicitação POST
-	HTTPClient http;
-	http.begin(url);
-
-	// Configurar os dados a serem enviados
-	http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-	// Enviar a solicitação POST
-	int httpResponseCode = http.POST(params);
-
-	// Verificar a resposta do servidor
-	if (httpResponseCode >= 200 && httpResponseCode < 400) {
-		sucess(http, httpResponseCode);
-	} else {
-		error(http, httpResponseCode);
-	}
-
-	// Libere os recursos
-	http.end();
 }
 
 void mensageminicial()
 {
-	Serial.println("Selecione o modo leitura ou gravacao...");
-	Serial.println();
 	lcd.clear();
-	lcd.print("Selecione o modo");
+	lcd.print("Aguardando");
 	lcd.setCursor(0, 1);
-	lcd.print("leitura/gravacao");
+	lcd.print("operacoes...");
 }
  
 void mensagem_inicial_cartao()
@@ -149,109 +130,16 @@ void mensagem_inicial_cartao()
 	lcd.setCursor(0, 1);
 	lcd.print("cartao do leitor");
 }
- 
-void modo_leitura()
-{
-	mensagem_inicial_cartao();
-	//Aguarda cartao
-	while ( ! mfrc522.PICC_IsNewCardPresent())
-	{
-		delay(100);
-	}
-	if ( ! mfrc522.PICC_ReadCardSerial())
-	{
-		return;
-	}
-	//Mostra UID na serial
-	Serial.print("UID da tag : ");
-	String conteudo = "";
-	byte letra;
-	for (byte i = 0; i < mfrc522.uid.size; i++)
-	{
-		Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
-		Serial.print(mfrc522.uid.uidByte[i], HEX);
-		conteudo.concat(String(mfrc522.uid.uidByte[i]<0x10 ? " 0" : " "));
-		conteudo.concat(String(mfrc522.uid.uidByte[i], HEX));
-	}
-	Serial.println();
- 
-	//Obtem os dados do setor 1, bloco 4 = Nome
-	byte sector				 = 1;
-	byte blockAddr			= 4;
-	byte trailerBlock	 = 7;
-	byte status;
-	byte buffer[18];
-	byte size = sizeof(buffer);
- 
-	//Autenticacao usando chave A
-	status=mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A,
-																	trailerBlock, &key, &(mfrc522.uid));
-	if (status != MFRC522::STATUS_OK) {
-		Serial.print(F("PCD_Authenticate() failed: "));
-		Serial.println(mfrc522.GetStatusCodeName((MFRC522::StatusCode)status));
-		return;
-	}
-	status = mfrc522.MIFARE_Read(blockAddr, buffer, &size);
-	if (status != MFRC522::STATUS_OK) {
-		Serial.print(F("MIFARE_Read() failed: "));
-		Serial.println(mfrc522.GetStatusCodeName((MFRC522::StatusCode)status));
-	}
-	//Mostra os dados do nome no Serial Monitor e LCD
-	lcd.clear();
-	lcd.setCursor(0, 0);
-	for (byte i = 1; i < 16; i++)
-	{
-		Serial.print(char(buffer[i]));
-		lcd.write(char(buffer[i]));
-	}
-	Serial.println();
- 
-	//Obtem os dados do setor 0, bloco 1 = Sobrenome
-	sector				 = 0;
-	blockAddr			= 1;
-	trailerBlock	 = 3;
- 
-	//Autenticacao usando chave A
-	status=mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A,
-																	trailerBlock, &key, &(mfrc522.uid));
-	if (status != MFRC522::STATUS_OK)
-	{
-		Serial.print(F("PCD_Authenticate() failed: "));
-		Serial.println(mfrc522.GetStatusCodeName((MFRC522::StatusCode)status));
-		return;
-	}
-	status = mfrc522.MIFARE_Read(blockAddr, buffer, &size);
-	if (status != MFRC522::STATUS_OK)
-	{
-		Serial.print(F("MIFARE_Read() failed: "));
-		Serial.println(mfrc522.GetStatusCodeName((MFRC522::StatusCode)status));
-	}
-	//Mostra os dados do sobrenome no Serial Monitor e LCD
-	 //Mostra os dados do sobrenome no Serial Monitor e LCD
-	lcd.setCursor(0, 1);
-	for (byte i = 0; i < 16; i++)
-	{
-		Serial.print(char(buffer[i]));
-		lcd.write(char(buffer[i]));
-	}
-	Serial.println();
- 
-	// Halt PICC
-	mfrc522.PICC_HaltA();
-	// Stop encryption on PCD
-	mfrc522.PCD_StopCrypto1();
-	delay(3000);
-	mensageminicial();
-}
- 
-void modo_gravacao()
-{
+
+void ler(void *params) {
 	mensagem_inicial_cartao();
 	//Aguarda cartao
 	while ( ! mfrc522.PICC_IsNewCardPresent()) {
-		delay(100);
+		delay(400);
+		Serial.println("Aguardando");
+		esp_task_wdt_reset();
 	}
-	if ( ! mfrc522.PICC_ReadCardSerial())		return;
+	if ( ! mfrc522.PICC_ReadCardSerial()) return;
  
 	//Mostra UID na serial
 	Serial.print(F("UID do Cartao: "));		//Dump UID
@@ -264,115 +152,13 @@ void modo_gravacao()
 	Serial.print(F("nTipo do PICC: "));
 	byte piccType = mfrc522.PICC_GetType(mfrc522.uid.sak);
 	Serial.println(mfrc522.PICC_GetTypeName((MFRC522::PICC_Type)piccType));
- 
-	byte buffer[34];
-	byte block;
-	byte status, len;
- 
-	Serial.setTimeout(20000L) ;
-	Serial.println(F("Digite o UID do animal,em seguida o caractere #"));
-	lcd.clear();
-	lcd.print("Digite o UID");
-	lcd.setCursor(0, 1);
-	lcd.print(" + #");
-	len = Serial.readBytesUntil('#', (char *) buffer, 30) ;
-	for (byte i = len; i < 30; i++) buffer[i] = ' ';
- 
-	block = 1;
-	//Serial.println(F("Autenticacao usando chave A..."));
-	status=mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A,
-																		block, &key, &(mfrc522.uid));
-	if (status != MFRC522::STATUS_OK) {
-		Serial.print(F("PCD_Authenticate() failed: "));
-		Serial.println(mfrc522.GetStatusCodeName((MFRC522::StatusCode)status));
-		return;
-	}
- 
-	//Grava no bloco 1
-	status = mfrc522.MIFARE_Write(block, buffer, 16);
-	if (status != MFRC522::STATUS_OK) {
-		Serial.print(F("MIFARE_Write() failed: "));
-		Serial.println(mfrc522.GetStatusCodeName((MFRC522::StatusCode)status));
-		return;
-	}
- 
-	block = 2;
-	//Serial.println(F("Autenticacao usando chave A..."));
-	status=mfrc522.PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A,
-																		block, &key, &(mfrc522.uid));
-	if (status != MFRC522::STATUS_OK) {
-		Serial.print(F("PCD_Authenticate() failed: "));
-		Serial.println(mfrc522.GetStatusCodeName((MFRC522::StatusCode)status));
-		return;
-	}
- 
-	//Grava no bloco 2
-	status = mfrc522.MIFARE_Write(block, &buffer[16], 16);
-	if (status != MFRC522::STATUS_OK) {
-		Serial.print(F("MIFARE_Write() failed: "));
-		Serial.println(mfrc522.GetStatusCodeName((MFRC522::StatusCode)status));
-		return;
-	}
 
-	
-	// char *params = "chave1=valor1&chave2=valor2";
-	char *params = new char[180];
-	for(int i = 0; i < 180; i++) params[i] = '\0';
-	sprintf(
-		params,
-		"uid_brinco=%s&display_brinco=%s",
-		getUid(mfrc522),
-		getBufferStr(buffer, len)
-	);
+	char* uid = getUid(mfrc522);
+	__read = true;
+	read_buffer = uid;
+	__created_task = false;
 
-	bool request_sucess = false;
-	requisicao_post(
-		"http://192.168.110.46:6754/teste",
-		params,
-		[&](HTTPClient &http, int statusCode) {
-			Serial.print("Sucesso na requisicao: ");
-			Serial.print(http.getString());
-			Serial.println("");
-			Serial.print("Status code: ");
-			Serial.println(statusCode);
-			request_sucess = true;
-		},
-		[](HTTPClient &http, int statusCode) {
-			char * mss = new char[512];
-			memset(mss, '\0', sizeof(mss));
-			sprintf(
-				mss,
-				"-----------------------------\n\
-				\rErro na requisicao: %s\n\
-				\rStatus code: %i\n\n\
-				\rRefaca a gravacao\n\
-				\r-----------------------------\n\n",
-				http.getString().c_str(),
-				statusCode
-			);
-			Serial.print(mss);
-			free(mss);
-		}	
-	);
- 
-	if(!request_sucess){
-		mfrc522.PICC_HaltA(); // Halt PICC
-		mfrc522.PCD_StopCrypto1();	// Stop encryption on PCD
-		delay(5000);
-		mensageminicial();
-		return;
-	}
-	
-	{
-		Serial.println(F("Dados gravados com sucesso!"));
-		Serial.println((const char *)buffer);
-		lcd.clear();
-		lcd.print("Gravacao OK!");
-	}
- 
-	mfrc522.PICC_HaltA(); // Halt PICC
-	mfrc522.PCD_StopCrypto1();	// Stop encryption on PCD
-	delay(5000);
+	vTaskDelete(NULL);
 	mensageminicial();
 }
 
@@ -399,9 +185,3 @@ char* getUid(MFRC522 &rf){
 	return uidString;
 }
 
-char* getBufferStr(byte* buffer, int len){
-	char *str = new char[100];
-	for(int i = 0; i < 100; i++) str[i] = '\0';
-	strncpy(str, (char *)buffer, len);
-	return str;
-}
