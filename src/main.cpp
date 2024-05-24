@@ -35,6 +35,8 @@ TaskHandle_t longTaskHandle = NULL;
  
 void setup()
 {
+	pinMode(GPIO_NUM_15, OUTPUT);
+	digitalWrite(GPIO_NUM_15, LOW);
 	Serial.begin(115200);	 //Inicia a serial
 	Serial.println("Configurando....");
 
@@ -50,8 +52,8 @@ void setup()
 	//Prepara chave - padrao de fabrica = FFFFFFFFFFFFh
 	for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
 
-	const char* ssid = "HFAS_2G";
-	const char* password = "x-box 360";
+	const char* ssid = "ismaelc";
+	const char* password = "leamsi123";
 
 	// Conectar-se à rede Wi-Fi
 	WiFi.begin(ssid, password);
@@ -63,7 +65,7 @@ void setup()
 	}
 
 
-	server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
+	server.on("/", HTTP_POST, [&](AsyncWebServerRequest *request) {
 		if(!__created_task){
 			__created_task = true;
 			xTaskCreate(
@@ -105,7 +107,7 @@ void setup()
 		}
 	});
 
-	server.on("/reset", HTTP_GET, [](AsyncWebServerRequest *request) {
+	server.on("/reset", HTTP_GET, [&](AsyncWebServerRequest *request) {
 		RESTART_SIGNAL = true;
 		AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", "OK");
 		response->addHeader("Access-Control-Allow-Origin", "*");
@@ -157,8 +159,9 @@ void ler(void *params) {
 	mensagem_inicial_cartao();
 	//Aguarda cartao
 	while ( ! mfrc522.PICC_IsNewCardPresent()) {
-		delay(400);
+		// delay(400);
 		Serial.println("Aguardando");
+   		vTaskDelay(100);
 		esp_task_wdt_reset();
 	}
 	if ( ! mfrc522.PICC_ReadCardSerial()) return;
@@ -171,7 +174,7 @@ void ler(void *params) {
 		Serial.print(mfrc522.uid.uidByte[i], HEX);
 	}
 	//Mostra o tipo do cartao
-	Serial.print(F("nTipo do PICC: "));
+	Serial.print(F("\nTipo do PICC: "));
 	byte piccType = mfrc522.PICC_GetType(mfrc522.uid.sak);
 	Serial.println(mfrc522.PICC_GetTypeName((MFRC522::PICC_Type)piccType));
 
