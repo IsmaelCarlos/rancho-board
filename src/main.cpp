@@ -7,11 +7,12 @@
 #include <stdio.h>
 #include <functional>
 #include <ESPAsyncWebServer.h>
-#include <esp_task_wdt.h>
+
 
 void mensageminicial();
 void mensagem_inicial_cartao();
-void ler(void *params);
+void menssagem_timeout();
+char* ler();
 char* getUid(MFRC522&);
  
 //Pinos Reset e SS módulo MFRC522
@@ -26,22 +27,25 @@ AsyncWebServer server(80);
 
 MFRC522::MIFARE_Key key;
 
-bool RESTART_SIGNAL = false;
-bool __created_task = false;
-bool __read = false;
-char* read_buffer;
+#define TIMEOUT_TIME 10000 //10 segundos de timeout
 
-TaskHandle_t longTaskHandle = NULL;
- 
-void setup()
-{
-	pinMode(GPIO_NUM_15, OUTPUT);
-	digitalWrite(GPIO_NUM_15, LOW);
+void* tmp_buf;
+
+bool timeout = false;
+int timeout_counter = 0;
+
+bool go_read_tag = false;
+bool tag_already_read = false;
+char* uid_tag = NULL;
+
+bool show_timeout_message = false;
+
+void setup() {
 	Serial.begin(115200);	 //Inicia a serial
 	Serial.println("Configurando....");
 
-	read_buffer = new char[512];
-	for(int i = 0; i < 512; i++) read_buffer[i] = 0;
+    tmp_buf = new char[512];
+    memset(tmp_buf, 0, 512);
 	
 	SPI.begin(); //Inicia SPI bus
 	mfrc522.PCD_Init();	 //Inicia MFRC522
@@ -65,56 +69,44 @@ void setup()
 	}
 
 
-	server.on("/", HTTP_POST, [&](AsyncWebServerRequest *request) {
-		if(!__created_task){
-			__created_task = true;
-			xTaskCreate(
-				ler,
-				"leitura",
-				2048,
-				NULL,
-				1,
-				&longTaskHandle
-			);
-		}
+	server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if(timeout){
+            tag_already_read = false;
+            timeout = false;
+            timeout_counter = 0;
 
-		if(__read){
-			AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", read_buffer);
+            AsyncWebServerResponse *response = request->beginResponse(408, "application/json", "{\"error\": \"TIMEOUT\",\"messsage\":\"Tempo limite atingido\"}");
 			response->addHeader("Access-Control-Allow-Origin", "*");
 			response->addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
 			response->addHeader("Access-Control-Allow-Headers", "Content-Type");
 			request->send(response);
 
-			esp_restart();
+            return;
+        }
+
+		if(tag_already_read){
+            sprintf((char*)tmp_buf, "{\"message\":\"Lido com sucesso\",\"uid\":\"%s\"}", uid_tag);
+			AsyncWebServerResponse *response = request->beginResponse(200, "application/json", (char*)tmp_buf);
+			response->addHeader("Access-Control-Allow-Origin", "*");
+			response->addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+			response->addHeader("Access-Control-Allow-Headers", "Content-Type");
+			request->send(response);
+
+            memset(tmp_buf, 0, 512);
+            tag_already_read = false;
+            delete[] uid_tag;
+            uid_tag = NULL;
 		}
 		else{
-			AsyncWebServerResponse *response = request->beginResponse(
-				200,
-				"text/plain",
-				RESTART_SIGNAL
-					? "ERROR"
-					: "WAIT"
-			);
+            go_read_tag = true;
+			AsyncWebServerResponse *response = request->beginResponse(202, "application/json", "{\"message\":\"Aguardando TAG...\",\"status\":\"WAITNG\"}");
 			response->addHeader("Access-Control-Allow-Origin", "*");
 			response->addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
 			response->addHeader("Access-Control-Allow-Headers", "Content-Type");
-			if(RESTART_SIGNAL) response->setCode(500);
+            response->addHeader("Retry-After", "1");
+            response->addHeader("Location", "/");
 			request->send(response);
-
-			if(RESTART_SIGNAL){
-				esp_restart();
-			}
 		}
-	});
-
-	server.on("/reset", HTTP_GET, [&](AsyncWebServerRequest *request) {
-		RESTART_SIGNAL = true;
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", "OK");
-		response->addHeader("Access-Control-Allow-Origin", "*");
-		response->addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-		response->addHeader("Access-Control-Allow-Headers", "Content-Type");
-		request->send(response);
-		// esp_restart();
 	});
 
 
@@ -136,18 +128,27 @@ void setup()
  
 void loop()
 {
+    if(go_read_tag){
+        uid_tag = ler();
+        tag_already_read = true;
+        go_read_tag = false;
+        mensageminicial();
+    }
+
+    if(show_timeout_message){
+        menssagem_timeout();
+        show_timeout_message = false;
+    }
 }
 
-void mensageminicial()
-{
+void mensageminicial() {
 	lcd.clear();
 	lcd.print("Aguardando");
 	lcd.setCursor(0, 1);
 	lcd.print("operacoes...");
 }
  
-void mensagem_inicial_cartao()
-{
+void mensagem_inicial_cartao() {
 	Serial.println("Aproxime o seu cartao do leitor...");
 	lcd.clear();
 	lcd.print(" Aproxime o seu");
@@ -155,16 +156,24 @@ void mensagem_inicial_cartao()
 	lcd.print("cartao do leitor");
 }
 
-void ler(void *params) {
+void menssagem_timeout() {
+    Serial.println("Tempo limite atingido...\n");
+}
+
+char* ler() {
 	mensagem_inicial_cartao();
 	//Aguarda cartao
 	while ( ! mfrc522.PICC_IsNewCardPresent()) {
-		// delay(400);
+        if(timeout_counter >= TIMEOUT_TIME){
+            timeout = true;
+            show_timeout_message = true;
+            return NULL;
+        }
+		delay(400);
+        timeout_counter += 400;
 		Serial.println("Aguardando");
-   		vTaskDelay(100);
-		esp_task_wdt_reset();
 	}
-	if ( ! mfrc522.PICC_ReadCardSerial()) return;
+	if ( ! mfrc522.PICC_ReadCardSerial()) return NULL;
  
 	//Mostra UID na serial
 	Serial.print(F("UID do Cartao: "));		//Dump UID
@@ -178,20 +187,15 @@ void ler(void *params) {
 	byte piccType = mfrc522.PICC_GetType(mfrc522.uid.sak);
 	Serial.println(mfrc522.PICC_GetTypeName((MFRC522::PICC_Type)piccType));
 
-	char* uid = getUid(mfrc522);
-	__read = true;
-	read_buffer = uid;
-	__created_task = false;
-
-	vTaskDelete(NULL);
-	mensageminicial();
+	return getUid(mfrc522);
 }
 
 char* getUid(MFRC522 &rf){
-	char *uidString = new char[rf.uid.size + 1]; // +1 para o caractere nulo de terminação
+    int stringSize = rf.uid.size*2 + 1;
+	char* uidString = new char[stringSize]; // +1 para o caractere nulo de terminação
 
 	// Limpar a string para garantir que ela esteja vazia antes de preenchê-la
-	memset(uidString, 0, sizeof(uidString));
+	memset(uidString, 0, stringSize);
 
 	// Converter cada byte do UID para sua representação hexadecimal e armazená-lo na string
 	int index = 0;
@@ -209,4 +213,3 @@ char* getUid(MFRC522 &rf){
 
 	return uidString;
 }
-
